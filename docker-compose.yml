@@ -1,0 +1,4 @@
+services:
+  mongodb:
+    image: mongo:5.0.28
+    #docker compose -p mongodb-4rn up -d
