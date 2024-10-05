@@ -15,6 +15,7 @@ export class FirebaseAdmin implements OnApplicationBootstrap {
             const serviceAccount = firebaseKeyPath;
             app = admin.initializeApp({
                 credential: admin.credential.cert(serviceAccount),
+                storageBucket: "productshowing-708f8.appspot.com"
             });
             fDB = app.firestore();
         }

@@ -26,7 +26,6 @@ export class OptionsController {
     return this.optionsService.search(+pageIdx, +pageSize, keyword, sortBy, filter);
   }
 
-  @Auth('USER')
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.optionsService.findOne(+id);
