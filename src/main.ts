@@ -14,6 +14,11 @@ async function bootstrap() {
   const port = configService.get('PORT');
   app.use(bodyParser.json({limit: '50mb'}));
   app.use(bodyParser.urlencoded({limit: '50mb', extended: true}));
+  app.enableCors({
+    origin: ['http://localhost:4200'],
+    methods: ['GET', 'POST'],
+    credentials: true,
+   });
   // Method 2: Apply Custom Middleware for Request Size
   app.use(new SizeLimitMiddleware().use);
   await app.listen(port);

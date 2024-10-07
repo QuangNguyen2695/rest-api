@@ -5,6 +5,8 @@ import { ImageUploadService } from '@/image-upload/image-upload.service';
 import { CreateImageUploadDto } from '@/image-upload/dto/create-image-upload.dto';
 import { FirebaseAdmin } from '@/config/firebase.setup';
 import { firestore } from 'firebase-admin';
+import { ProductDtoRes, SearchProductsRes } from './dto/product.dto';
+import { generateKeywords } from '@/utils/utils.dto';
 
 @Injectable()
 export class ProductsService {
@@ -35,8 +37,8 @@ export class ProductsService {
       const id = await this.getNextId();
       createProductDto.id = id;
 
-      createProductDto = await this.uploadProductImage(createProductDto)
-      createProductDto = await this.uploadProductVariantsImage(createProductDto)
+      createProductDto = await this.uploadProductImage(createProductDto);
+      createProductDto = await this.uploadProductOptionsImage(createProductDto);
 
       const createOptionDtoToInsert = {
         ...createProductDto,
@@ -45,7 +47,8 @@ export class ProductsService {
         updateAt: firestore.FieldValue.serverTimestamp(),
       };
 
-      createOptionDtoToInsert.keywords = this.generateKeywords(createProductDto);
+      createOptionDtoToInsert.keywords = this.generateProductsKeywords(createProductDto);
+      console.log("🚀 ~ ProductsService ~ create ~ createOptionDtoToInsert:", createOptionDtoToInsert)
 
       await this.productsRef.doc(id.toString()).set(createOptionDtoToInsert);
 
@@ -61,20 +64,108 @@ export class ProductsService {
     }
   }
 
-  findAll() {
-    return `This action returns all products`;
+  async search(pageIdx: number, pageSize: number, keyword: string, sortBy: any, filter: string) {
+    try {
+      const res = new SearchProductsRes();
+      if (!pageIdx && !pageSize) {
+        const products = await this.getAllProducts();
+        return Object.assign(res, products);
+      }
+
+      // build search query
+      let query = await this.buildSearchQuery(keyword);
+
+      //Get total item
+      const totalItem = (await query.count().get()).data().count;
+      sortBy = sortBy || 'desc';
+      // Apply sorting
+      query = query.orderBy('createAt', sortBy);
+
+      // Apply pagination
+      if (pageIdx && pageSize) {
+        const offset = (pageIdx - 1) * pageSize;
+        query = query.offset(offset).limit(pageSize);
+      }
+
+      const snapshot = await query.get();
+      const result = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      res.products = Object.assign(res.products, result);;
+      res.pageIdx = pageIdx;
+      res.totalPage = Math.ceil(totalItem / pageSize) || 1;
+      res.totalItem = totalItem;
+      return res;
+    } catch (error) {
+      console.error("Error in searchOptions:", error);
+      throw new Error("An error occurred while searching options");
+    }
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} product`;
+  async findOne(id: number) {
+    const docRef = this.productsRef.doc(id.toString());
+    const docSnapshot = await docRef.get();
+
+    if (!docSnapshot.exists) {
+      throw new Error("Product not found");
+    }
+
+    return Object.assign(new ProductDtoRes(), docSnapshot.data());
   }
 
-  update(id: number, updateProductDto: UpdateProductDto) {
-    return `This action updates a #${id} product`;
+  async update(updateProductDto: UpdateProductDto) {
+    if (!updateProductDto || typeof updateProductDto !== 'object' || Array.isArray(updateProductDto)) {
+      throw new Error("Invalid input: must be an object");
+    }
+
+    try {
+
+      const docRef = this.productsRef.doc();
+      const docSnapshot = await docRef.get();
+
+      if (!docSnapshot.exists) {
+        throw new Error("Option not found");
+      }
+
+      updateProductDto.keywords = generateKeywords([updateProductDto.name, updateProductDto.desc]);
+      console.log("🚀 ~ OptionsService ~ updateOptions ~ options.keywords:", updateProductDto.keywords)
+
+
+      const updateProductDtoToInsert = {
+        ...updateProductDto,
+        updateAt: firestore.FieldValue.serverTimestamp()
+      };
+
+      await docRef.update(updateProductDtoToInsert);
+
+      return Object.assign(new ProductDtoRes(), updateProductDtoToInsert);
+
+    } catch (error) {
+      console.error("Error in updateOptions:", error);
+      throw new Error(`An error occurred while updating options: ${error.message}`);
+    }
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} product`;
+  async remove(id: number) {
+    const docRef = this.productsRef.doc();
+    const docSnapshot = await docRef.get();
+
+    if (!docSnapshot.exists) {
+      throw new Error("Option not found");
+    }
+
+    try {
+      await this.productsRef.doc(id.toString()).delete();
+      await this.decrementTotalItem();
+      return true;
+    } catch (error) {
+      console.error("Error in deleteOptions:", error);
+      throw new Error("An error occurred while deleting options");
+    }
+  }
+
+  async getAllProducts() {
+    const productsSnap = await this.productsRef.get();
+    return productsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   }
 
   async uploadProductImage(createProductDto: CreateProductDto) {
@@ -98,57 +189,22 @@ export class ProductsService {
       }),
     );
 
-    if (createProductDto.variants) {
-      const variantsImageUrls = await Promise.all(
-        createProductDto.variants.map(async (variant) => {
-          if (!variant.upc) {
-            variant.upc = "1" + Math.floor(Math.random() * 10000000);
-          }
-          const variantImageUrls = await Promise.all(
-            variant.option_values.map(async (optionValue, idx) => {
-              if (optionValue.image) {
-                const createVariantImageUploadDto = Object.assign(new CreateImageUploadDto(), {
-                  image: optionValue.image,
-                  pathname: `${this.productStoragePath}${id}/variants/${variant.upc}/${idx}.jpg`,
-                });
-                return await this.imageUploadService.create(createVariantImageUploadDto);
-              }
-              return null; // Handle cases where optionValue.image is null or undefined
-            }),
-          );
-          return {
-            ...variant,
-            option_values: variant.option_values.map((optionValue, idx) => (
-              {
-                ...optionValue,
-                image: variantImageUrls[idx],
-              }
-            )),
-          };
-        }),
-      );
-      createProductDto.variants = variantsImageUrls;
-    }
-
     createProductDto.galleryImage = galleryImageUrls;
     return createProductDto;
   }
 
-  async uploadProductVariantsImage(createProductDto: CreateProductDto) {
+  async uploadProductOptionsImage(createProductDto: CreateProductDto) {
     const id = createProductDto.id;
 
-    if (createProductDto.variants) {
-      const variantsImageUrls = await Promise.all(
-        createProductDto.variants.map(async (variant) => {
-          if (!variant.upc) {
-            variant.upc = "100000" + Math.floor(Math.random() * 10);
-          }
-          const variantImageUrls = await Promise.all(
-            variant.option_values.map(async (optionValue, idx) => {
+    if (createProductDto.options) {
+      const optionsImageUrls = await Promise.all(
+        createProductDto.options.map(async (option) => {
+          const optionImageUrls = await Promise.all(
+            option.option_values.map(async (optionValue) => {
               if (optionValue.image) {
                 const createVariantImageUploadDto = Object.assign(new CreateImageUploadDto(), {
                   image: optionValue.image,
-                  pathname: `${this.productStoragePath}${id}/variants/${variant.upc}/${idx}.jpg`,
+                  pathname: `${this.productStoragePath}${id}/options/${option.option_id}/${optionValue.name}.jpg`,
                 });
                 return await this.imageUploadService.create(createVariantImageUploadDto);
               }
@@ -156,29 +212,27 @@ export class ProductsService {
             }),
           );
           return {
-            ...variant,
-            option_values: variant.option_values.map((optionValue, idx) => (
+            ...option,
+            option_values: option.option_values.map((optionValue, idx) => (
               {
                 ...optionValue,
-                image: variantImageUrls[idx],
+                image: optionImageUrls[idx],
               }
             )),
           };
         }),
       );
-      createProductDto.variants = variantsImageUrls;
+      createProductDto.options = optionsImageUrls;
     }
     return createProductDto;
   }
-
-
 
   async getNextId() {
     const doc = await this.counterRef.get();
     return doc.exists ? doc.data().numIncrease : 0;
   }
 
-  generateKeywords(createProductDto: CreateProductDto) {
+  generateProductsKeywords(createProductDto: CreateProductDto) {
     const stopWords = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he', 'in', 'is', 'it',
       'its', 'of', 'on', 'that', 'the', 'to', 'was', 'were', 'will', 'with']);
 
@@ -190,7 +244,7 @@ export class ProductsService {
     };
 
     const nameTokens = tokenize(createProductDto.name);
-    const descriptionTokens = createProductDto.decs ? tokenize(createProductDto.decs) : [];
+    const descriptionTokens = createProductDto.desc ? tokenize(createProductDto.desc) : [];
     let allTokens = [...new Set([...nameTokens, ...descriptionTokens])];
 
     if (createProductDto.variants) {
@@ -224,5 +278,19 @@ export class ProductsService {
     await this.counterRef.set({
       totalItem: firestore.FieldValue.increment(-1),
     }, { merge: true });
+  }
+
+  buildSearchQuery(keyword) {
+    let query = this.productsRef.where(firestore.FieldPath.documentId(), '!=', 'counter');
+
+    if (keyword && keyword.trim()) {
+      const searchTokens = generateKeywords([keyword]);
+
+      if (searchTokens.length > 0) {
+        query = query.where('keywords', 'array-contains-any', searchTokens);
+      }
+    }
+
+    return query;
   }
 }
