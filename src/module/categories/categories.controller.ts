@@ -1,26 +1,26 @@
 import { Controller, Get, Post, Body, Put, Param, Delete, Query, ValidationPipe } from '@nestjs/common';
-import { OptionsService } from './options.service';
-import { CreateOptionDto, SearchOptionsQuery, UpdateOptionDto } from './dto/option.dto';
 import { Auth } from '@/decorators/auth.decorator';
+import { CategoriesService } from './categories.service';
+import { CreateCategoriesDto, SearchCategoriessQuery, UpdateCategoriesDto } from './dto/categories.dto';
 
-@Controller('options')
-export class OptionsController {
-  constructor(private readonly optionsService: OptionsService) { }
+@Controller('categories')
+export class CategoriesController {
+  constructor(private readonly optionsService: CategoriesService) { }
 
-  @Auth('ADMIN')
+  // @Auth('ADMIN')
   @Post()
-  create(@Body() createOptionDto: CreateOptionDto) {
-    return this.optionsService.create(createOptionDto);
+  create(@Body() createCategoriesDto: CreateCategoriesDto) {
+    return this.optionsService.create(createCategoriesDto);
   }
-  
-  @Auth('USER')
+
+  // @Auth('USER')
   @Get()
   search(
     @Query(new ValidationPipe({
       transform: true,
       transformOptions: { enableImplicitConversion: true },
       forbidNonWhitelisted: true
-    })) query: SearchOptionsQuery
+    })) query: SearchCategoriessQuery
   ) {
     const { pageIdx = 0, pageSize = 0, keyword = "", sortBy = "", filter = "" } = query;
     return this.optionsService.search(+pageIdx, +pageSize, keyword, sortBy, filter);
@@ -31,13 +31,13 @@ export class OptionsController {
     return this.optionsService.findOne(+id);
   }
 
-  @Auth('USER')
+  // @Auth('USER')
   @Put()
-  update(@Body() updateOptionDto: UpdateOptionDto) {
-    return this.optionsService.update(updateOptionDto);
+  update(@Body() updateCategoriesDto: UpdateCategoriesDto) {
+    return this.optionsService.update(updateCategoriesDto);
   }
 
-  @Auth('ADMIN')
+  // @Auth('ADMIN')
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.optionsService.remove(+id);

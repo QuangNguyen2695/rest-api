@@ -16,7 +16,7 @@ async function bootstrap() {
   app.use(bodyParser.urlencoded({limit: '50mb', extended: true}));
   app.enableCors({
     origin: ['http://localhost:4200'],
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true,
    });
   // Method 2: Apply Custom Middleware for Request Size

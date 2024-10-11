@@ -2,11 +2,11 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
-import { OptionsModule } from './options/options.module';
-import { UsersModule } from './users/users.module';
 import { FirebaseAdmin } from './config/firebase.setup';
-import { ProductsModule } from './products/products.module';
-import { ImageUploadModule } from './image-upload/image-upload.module';
+import { UsersModule } from './module/users/users.module';
+import { OptionsModule } from './module/categories/categories.module';
+import { ProductsModule } from './module/products/products.module';
+import { ImageUploadModule } from './module/image-upload/image-upload.module';
 
 @Module({
   imports: [

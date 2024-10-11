@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { ImageUploadService } from '@/image-upload/image-upload.service';
-import { CreateImageUploadDto } from '@/image-upload/dto/create-image-upload.dto';
+import { ImageUploadService } from '@/module/image-upload/image-upload.service';
+import { CreateImageUploadDto } from '@/module/image-upload/dto/create-image-upload.dto';
 import { FirebaseAdmin } from '@/config/firebase.setup';
 import { firestore } from 'firebase-admin';
 import { ProductDtoRes, SearchProductsRes } from './dto/product.dto';
-import { generateKeywords } from '@/utils/utils.dto';
+import { decrementTotalItem, generateKeywords, getNextId, incrementCounter } from '@/utils/utils.dto';
 
 @Injectable()
 export class ProductsService {
@@ -34,7 +34,7 @@ export class ProductsService {
     }
     try {
 
-      const id = await this.getNextId();
+      const id = await getNextId(this.counterRef);
       createProductDto.id = id;
 
       createProductDto = await this.uploadProductImage(createProductDto);
@@ -52,7 +52,7 @@ export class ProductsService {
 
       await this.productsRef.doc(id.toString()).set(createOptionDtoToInsert);
 
-      await this.incrementCounter();
+      await incrementCounter(this.counterRef);
 
       // Fetch the created document to return the most current data
       const createdSnapshot = await this.productsRef.doc(id.toString()).get();
@@ -119,15 +119,14 @@ export class ProductsService {
 
     try {
 
-      const docRef = this.productsRef.doc();
+      const docRef = this.productsRef.doc(updateProductDto.id.toString());
       const docSnapshot = await docRef.get();
 
       if (!docSnapshot.exists) {
-        throw new Error("Option not found");
+        throw new Error("Product not found");
       }
 
       updateProductDto.keywords = generateKeywords([updateProductDto.name, updateProductDto.desc]);
-      console.log("🚀 ~ OptionsService ~ updateOptions ~ options.keywords:", updateProductDto.keywords)
 
 
       const updateProductDtoToInsert = {
@@ -146,7 +145,7 @@ export class ProductsService {
   }
 
   async remove(id: number) {
-    const docRef = this.productsRef.doc();
+    const docRef = this.productsRef.doc(id.toString());
     const docSnapshot = await docRef.get();
 
     if (!docSnapshot.exists) {
@@ -155,7 +154,7 @@ export class ProductsService {
 
     try {
       await this.productsRef.doc(id.toString()).delete();
-      await this.decrementTotalItem();
+      await decrementTotalItem(this.counterRef);
       return true;
     } catch (error) {
       console.error("Error in deleteOptions:", error);
@@ -227,11 +226,6 @@ export class ProductsService {
     return createProductDto;
   }
 
-  async getNextId() {
-    const doc = await this.counterRef.get();
-    return doc.exists ? doc.data().numIncrease : 0;
-  }
-
   generateProductsKeywords(createProductDto: CreateProductDto) {
     const stopWords = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he', 'in', 'is', 'it',
       'its', 'of', 'on', 'that', 'the', 'to', 'was', 'were', 'will', 'with']);
@@ -265,19 +259,6 @@ export class ProductsService {
     }
 
     return keywords;
-  }
-
-  async incrementCounter() {
-    await this.counterRef.set({
-      numIncrease: firestore.FieldValue.increment(1),
-      totalItem: firestore.FieldValue.increment(1),
-    }, { merge: true });
-  }
-
-  async decrementTotalItem() {
-    await this.counterRef.set({
-      totalItem: firestore.FieldValue.increment(-1),
-    }, { merge: true });
   }
 
   buildSearchQuery(keyword) {

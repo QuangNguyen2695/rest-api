@@ -1,3 +1,5 @@
+import { firestore } from "firebase-admin";
+
 export class TimeStampFB {
     seconds: number;
     nanoseconds: number;
@@ -41,4 +43,23 @@ export function generateKeywords(listGenerate: Array<string>) {
     }
 
     return keywords;
+}
+
+
+export async function getNextId(counterRef: FirebaseFirestore.DocumentReference) {
+    const doc = await counterRef.get();
+    return doc.exists ? doc.data().numIncrease : 0;
+}
+
+export async function incrementCounter(counterRef: FirebaseFirestore.DocumentReference) {
+    await counterRef.set({
+        numIncrease: firestore.FieldValue.increment(1),
+        totalItem: firestore.FieldValue.increment(1),
+    }, { merge: true });
+}
+
+export async function decrementTotalItem(counterRef: FirebaseFirestore.DocumentReference) {
+    await counterRef.set({
+        totalItem: firestore.FieldValue.increment(-1),
+    }, { merge: true });
 }

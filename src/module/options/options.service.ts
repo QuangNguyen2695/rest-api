@@ -3,6 +3,7 @@ import { CreateOptionDto, OptionDto, OptionDtoRes, SearchOptionsRes, UpdateOptio
 import { firestore } from 'firebase-admin';
 import { FirebaseAdmin } from '@/config/firebase.setup';
 import { checkPrime } from 'crypto';
+import { decrementTotalItem, getNextId, incrementCounter } from '@/utils/utils.dto';
 
 @Injectable()
 export class OptionsService {
@@ -28,7 +29,7 @@ export class OptionsService {
     }
 
     try {
-      const id = await this.getNextId();
+      const id = await getNextId(this.counterRef);
       createOptionDto.id = id;  // Assign the new ID to the createOptionDto instance
 
       const createOptionDtoToInsert = {
@@ -42,7 +43,7 @@ export class OptionsService {
 
       await this.optionsRef.doc(id.toString()).set(createOptionDtoToInsert);
 
-      await this.incrementCounter();
+      await incrementCounter(this.counterRef);
 
       // Fetch the created document to return the most current data
       const createdSnapshot = await this.optionsRef.doc(id.toString()).get();
@@ -113,7 +114,7 @@ export class OptionsService {
 
     try {
 
-      const docRef = this.optionsRef.doc();
+      const docRef = this.optionsRef.doc(updateOptionDto.id.toString());
       const docSnapshot = await docRef.get();
 
       if (!docSnapshot.exists) {
@@ -140,7 +141,7 @@ export class OptionsService {
   }
 
   async remove(id: number) {
-    const docRef = this.optionsRef.doc();
+    const docRef = this.optionsRef.doc(id.toString());
     const docSnapshot = await docRef.get();
 
     if (!docSnapshot.exists) {
@@ -149,17 +150,12 @@ export class OptionsService {
 
     try {
       await this.optionsRef.doc(id.toString()).delete();
-      await this.decrementTotalItem();
+      await decrementTotalItem(this.counterRef);
       return true;
     } catch (error) {
       console.error("Error in deleteOptions:", error);
       throw new Error("An error occurred while deleting options");
     }
-  }
-
-  async getNextId() {
-    const doc = await this.counterRef.get();
-    return doc.exists ? doc.data().numIncrease : 0;
   }
 
   generateKeywords(name, description) {
@@ -187,19 +183,6 @@ export class OptionsService {
     }
 
     return keywords;
-  }
-
-  async incrementCounter() {
-    await this.counterRef.set({
-      numIncrease: firestore.FieldValue.increment(1),
-      totalItem: firestore.FieldValue.increment(1),
-    }, { merge: true });
-  }
-
-  async decrementTotalItem() {
-    await this.counterRef.set({
-      totalItem: firestore.FieldValue.increment(-1),
-    }, { merge: true });
   }
 
   buildSearchQuery(keyword) {

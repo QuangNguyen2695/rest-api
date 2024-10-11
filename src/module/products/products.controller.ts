@@ -34,6 +34,7 @@ export class ProductsController {
 
   @Put()
   update(@Body() updateOptionDto: UpdateProductDto) {
+    console.log("🚀 ~ ProductsController ~ update ~ update:")
     return this.productsService.update(updateOptionDto);
   }
 
