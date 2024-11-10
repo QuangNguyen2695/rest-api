@@ -8,18 +8,15 @@ import { decrementTotalItem, getNextId, incrementCounter, TimeStampFB } from '@/
 @Injectable()
 export class CategoriesService {
   categoriesRef: FirebaseFirestore.CollectionReference;
-  categoriesTypeRef: FirebaseFirestore.CollectionReference;
   counterRef: FirebaseFirestore.DocumentReference;
 
   fDB: FirebaseFirestore.Firestore;
 
   constructor(private readonly admin: FirebaseAdmin) {
     this.fDB = this.admin.fDB();
-    console.log("🚀 ~ CategoriessService ~ constructor ~ firestore:", firestore)
     this.categoriesRef = this.fDB.collection("categories");
     this.counterRef = this.categoriesRef.doc("counter");
 
-    this.categoriesTypeRef = this.fDB.collection("categoriesTypeRef");
   }
 
   async create(createCategoriesDto: CreateCategoriesDto): Promise<any> {
@@ -35,12 +32,10 @@ export class CategoriesService {
       const id = await getNextId(this.counterRef);
       createCategoriesDto.id = id;  // Assign the new ID to the createCategoriesDto instance
 
-      const cateType = await this.getCategoriesType(createCategoriesDto.categoriesTypeId);
-
       const createCategoriesDtoToInsert = {
         ...createCategoriesDto,
         id: id,
-        categoriesTypeId: cateType.id,
+        indexTreeCategories: await this.setIndexTreeCategories(createCategoriesDto.parentId),
         createAt: firestore.FieldValue.serverTimestamp(),
         updateAt: firestore.FieldValue.serverTimestamp()
       };
@@ -51,8 +46,6 @@ export class CategoriesService {
 
       await incrementCounter(this.counterRef);
 
-      await this.createNexCategoryType(cateType);
-
       // Fetch the created document to return the most current data
       const createdSnapshot = await this.categoriesRef.doc(id.toString()).get();
       return Object.assign(new CategoriesDtoRes(), createdSnapshot.data());
@@ -62,45 +55,12 @@ export class CategoriesService {
     }
   }
 
-
-  async getCategoriesType(categoriesTypeId: string) {
-    const docRef = this.categoriesTypeRef.doc(categoriesTypeId);
-    const docSnapshot = await docRef.get();
-    const cateType = docSnapshot.data();
-    return cateType;
-  }
-
-  async createNexCategoryType(cateType: any) {
-    const id = uuidv4();
-    const nameNexCateType = "Sub-Categories-" + (cateType.index + 1);
-    console.log("🚀 ~ CategoriesService ~ createNexCategoryType ~ nameNexCateType:", nameNexCateType)
-    const indexNextCateType = cateType.index + 1;
-    console.log("🚀 ~ CategoriesService ~ createNexCategoryType ~ indexNextCateType:", indexNextCateType)
-
-    const nextCategoryType = await this.findCategoryType(indexNextCateType);
-    console.log("🚀 ~ CategoriesService ~ createNexCategoryType ~ nextCategoryType:", nextCategoryType)
-    
-    if (nextCategoryType) {
-      return;
+  async setIndexTreeCategories(parentId: number) {
+    if (!parentId) {
+      return 0;
     }
-
-    const indexTreeCategoriesUpsert = {
-      id: id,
-      name: nameNexCateType,
-      index: indexNextCateType,
-      createAt: firestore.FieldValue.serverTimestamp(),
-      updateAt: firestore.FieldValue.serverTimestamp(),
-    }
-
-    await this.categoriesTypeRef.doc(id.toString()).set(indexTreeCategoriesUpsert);
-  }
-
-  async findCategoryType(index: number) {
-    const docRef = this.categoriesTypeRef.where(firestore.FieldPath.documentId(), '!=', 'counter');
-    const docSnapshot = await docRef.get();
-    const categoriesTypes = docSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    const findNexttreeCategories = categoriesTypes && categoriesTypes.find((i: any) => i.index == index);
-    return findNexttreeCategories;
+    const parentCategories = await this.findOne(parentId);
+    return parentCategories.indexTreeCategories += 1;
   }
 
   async search(pageIdx: number, pageSize: number, keyword: string, sortBy: any, filter: string) {
@@ -131,7 +91,7 @@ export class CategoriesService {
       const snapshot = await query.get();
       const result = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      res.categoriess = Object.assign(res.categoriess, result);;
+      res.categories = Object.assign(res.categories, result);;
       res.pageIdx = pageIdx;
       res.totalPage = Math.ceil(totalItem / pageSize) || 1;
       res.totalItem = totalItem;
@@ -164,6 +124,22 @@ export class CategoriesService {
       const docRef = this.categoriesRef.doc(updateCategoriesDto.id.toString());
       const docSnapshot = await docRef.get();
 
+      const category = docSnapshot.data();
+
+      const checkUpdateBackToChilrent = await this.checkUpdateBackToChilrent(updateCategoriesDto, category);
+
+      if (checkUpdateBackToChilrent) {
+        const chilrentOfCategory = await this.getchilrendCategory(category);
+        await Promise.all(
+          chilrentOfCategory.map(async (c: any) => {
+            c.parentId = category.parentId;
+            return this.update(c);
+          })
+        );
+      }
+
+      console.log("🚀 ~ CategoriesService ~ update ~ checkUpdateBackToChilrent:", checkUpdateBackToChilrent)
+
       if (!docSnapshot.exists) {
         throw new Error("Categories not found");
       }
@@ -185,6 +161,34 @@ export class CategoriesService {
       console.error("Error in updateCategoriess:", error);
       throw new Error(`An error occurred while updating categoriess: ${error.message}`);
     }
+  }
+
+  async checkUpdateBackToChilrent(updateCategoriesDto: any, category: any): Promise<boolean> {
+    const chilrentOfCategory = await this.getchilrendCategory(category);
+
+    // Use Promise.all with map instead of forEach
+    const results = await Promise.all(
+      chilrentOfCategory.map(async (c: any) => {
+        // Direct match found
+        if (c.id === updateCategoriesDto.parentId) {
+          return true;
+        }
+        // Recursively check children
+        return await this.checkUpdateBackToChilrent(updateCategoriesDto, c);
+      })
+    );
+
+    // Return true if any child returns true
+    return results.some(result => result === true);
+  }
+
+  async getchilrendCategory(category: any) {
+    const queryGetChilrentOfCategory = this.categoriesRef
+      .where(firestore.FieldPath.documentId(), '!=', 'counter')
+      .where('parentId', '==', category.id);
+
+    const ChilrentOfCategorySnapshot = await queryGetChilrentOfCategory.get();
+    return ChilrentOfCategorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   }
 
   async remove(id: number) {

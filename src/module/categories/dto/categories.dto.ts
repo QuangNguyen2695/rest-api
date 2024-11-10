@@ -5,7 +5,7 @@ import { IsInt, IsNotEmpty, IsNumber, IsString, IsOptional } from "class-validat
 
 export class SearchCategoriesRes {
     pageIdx: number = 0;
-    categoriess: Array<CategoriesDtoRes> = [];
+    categories: Array<CategoriesDtoRes> = [];
     totalPage: number = 0;
     totalItem: number = 0
 }
@@ -49,8 +49,8 @@ export class CreateCategoriesDto {
     description: string
 
     @IsOptional()
-    @IsString()
-    parentId: string;
+    @IsNumber()
+    parentId: number;
 
     @IsOptional()
     @IsString()
